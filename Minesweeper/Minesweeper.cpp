@@ -2,8 +2,9 @@
 #include "Minesweeper.h"
 #include "RandomGenerator.h"
 
-Minesweeper::Minesweeper() : hovered_x(-1), hovered_y(-1), center(), dpi(1.0f), transformation(), field_bitmap_def(L"Assets\\Field.png") {
-    InitializeGame(15, 15, 40);
+Minesweeper::Minesweeper(int x_size, int y_size, int mines_count)
+    : hovered_x(-1), hovered_y(-1), center(), dpi(1.0f), transformation(), field_bitmap_def(FIELD_BITMAP_PATH) {
+    InitializeGame(x_size, y_size, mines_count);
 }
 
 void Minesweeper::CreateDeviceIndependentResources() {
@@ -29,13 +30,13 @@ void Minesweeper::CreateDeviceIndependentResources() {
         reinterpret_cast<IUnknown**>(write_factory.put())
     ));
     winrt::check_hresult(write_factory->CreateTextFormat(
-        L"Times New Roman",
+        FONT_COLLECTION,
         nullptr,
         DWRITE_FONT_WEIGHT_BOLD,
         DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL,
         50.0f,
-        L"en-us",
+        LOCALE_NAME,
         format.put()
     ));
     format.as(text_format);
@@ -106,17 +107,17 @@ void Minesweeper::CreateDeviceDependentResources() {
 
     field_bitmap_def.CreateDeviceDependentResources(d2d_context.get());
 
-    winrt::check_hresult(d2d_context->CreateSolidColorBrush(background_color, main_brush.put()));
+    winrt::check_hresult(d2d_context->CreateSolidColorBrush(BACKGROUND_COLOR, main_brush.put()));
 
     winrt::check_hresult(d2d_context->CreateEffect(CLSID_D2D13DPerspectiveTransform, perspective_transform_effect.put()));
     winrt::check_hresult(d2d_context->CreateEffect(CLSID_D2D1ColorMatrix, color_matrix_effect.put()));
 
     winrt::com_ptr<ID2D1GradientStopCollection> even_rad_stops, odd_rad_stops;
-    winrt::check_hresult(d2d_context->CreateGradientStopCollection(even_rad_stops_data, 3, even_rad_stops.put()));
+    winrt::check_hresult(d2d_context->CreateGradientStopCollection(EVEN_RAD_STOPS_DATA, 3, even_rad_stops.put()));
     winrt::check_hresult(d2d_context->CreateRadialGradientBrush(
         D2D1::RadialGradientBrushProperties(D2D1::Point2F(0, 0), D2D1::Point2F(0, 0), 150, 150),
         even_rad_stops.get(), even_gradient_brush.put()));
-    winrt::check_hresult(d2d_context->CreateGradientStopCollection(odd_rad_stops_data, 3, odd_rad_stops.put()));
+    winrt::check_hresult(d2d_context->CreateGradientStopCollection(ODD_RAD_STOPS_DATA, 3, odd_rad_stops.put()));
     winrt::check_hresult(d2d_context->CreateRadialGradientBrush(
         D2D1::RadialGradientBrushProperties(D2D1::Point2F(0, 0), D2D1::Point2F(0, 0), 150, 150),
         odd_rad_stops.get(), odd_gradient_brush.put()));
@@ -214,7 +215,9 @@ void Minesweeper::HandleDeviceLost(HWND hwnd) {
 }
 
 D2D1_MATRIX_5X4_F Minesweeper::GetMatrixForGrayscaleAnimation(double time) {
-    float ratio = time < 2000.f ? time / 2000.0f : 1.0f;
+    float ratio = time < MINE_ANIMATION_TIME
+        ? static_cast<FLOAT>(time / MINE_ANIMATION_TIME)
+        : 1.0f;
     return D2D1::Matrix5x4F(
         1.0f - 0.701f * ratio, 0.299f * ratio, 0.299f * ratio, 0.0f,
         0.587f * ratio, 1.0f - 0.413f * ratio, 0.587f * ratio, 0.0f,
@@ -274,8 +277,7 @@ void Minesweeper::GenerateBoard() {
             mine_x = random_generator.GetRandomNumber(0, static_cast<std::size_t>(x_size) - 1);
             mine_y = random_generator.GetRandomNumber(0, static_cast<std::size_t>(y_size) - 1);
         } while (field_values[mine_x][mine_y] < 0
-            || (std::abs(hovered_x - static_cast<int>(mine_x)) <= 1
-            && std::abs(hovered_y - static_cast<int>(mine_y)) <= 1));
+            || ShouldRegenerateMine(mine_x, mine_y));
 
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
@@ -349,21 +351,34 @@ bool Minesweeper::IsValidFieldHovered() {
     return (hovered_x >= 0 && hovered_x < GetBoardXSize() && hovered_y >= 0 && hovered_y < GetBoardYSize());
 }
 
+bool Minesweeper::ShouldRegenerateMine(std::size_t mine_x, std::size_t mine_y) {
+    if (game_state.GetRemainingMines() == GetBoardXSize() * GetBoardYSize()) {
+        return false;
+    }
+
+    if (game_state.GetRemainingMines() + 9 > GetBoardXSize() * GetBoardYSize()) {
+        return hovered_x == mine_x && hovered_y == mine_y;
+    }
+
+    return std::abs(hovered_x - static_cast<int>(mine_x)) <= 1
+        && std::abs(hovered_y - static_cast<int>(mine_y)) <= 1;
+}
+
 void Minesweeper::RenderTexts() {
-    main_brush->SetColor(font_color);
+    main_brush->SetColor(FONT_COLOR);
 
     std::wstring top_text;
     switch (game_state.GetGameStatus()) {
     case GameStatus::Init:
     case GameStatus::Ongoing:
-        top_text = L"Remaining mines: ";
+        top_text = REMAINING_MINES_TEXT;
         top_text += std::to_wstring(game_state.GetRemainingMines());
         break;
     case GameStatus::Won:
-        top_text = L"You won!";
+        top_text = WIN_TEXT;
         break;
     case GameStatus::Lost:
-        top_text = L"You lost!";
+        top_text = LOSE_TEXT;
         break;
     }
 
@@ -371,11 +386,11 @@ void Minesweeper::RenderTexts() {
         top_text.c_str(),
         static_cast<UINT32>(top_text.length()),
         text_format.get(),
-        D2D1::RectF(0.0f, 16.0f, d2d_context->GetSize().width, 100.0f),
+        D2D1::RectF(0.0f, TEXT_RECT_OFFSET, d2d_context->GetSize().width, TEXT_RECT_HEIGHT),
         main_brush.get());
 
     if (game_state.GetGameStatus() == GameStatus::Won || game_state.GetGameStatus() == GameStatus::Lost) {
-        std::wstring bottom_text(L"Press R to restart");
+        std::wstring bottom_text(RESTART_TEXT);
 
         d2d_context->DrawText(
             bottom_text.c_str(),
@@ -383,9 +398,9 @@ void Minesweeper::RenderTexts() {
             text_format.get(),
             D2D1::RectF(
                 0.0f,
-                d2d_context->GetSize().height - 116.0f,
+                d2d_context->GetSize().height - TEXT_RECT_HEIGHT - TEXT_RECT_OFFSET,
                 d2d_context->GetSize().width,
-                d2d_context->GetSize().height - 16.0f),
+                d2d_context->GetSize().height - TEXT_RECT_OFFSET),
             main_brush.get());
     }
 }
@@ -393,7 +408,7 @@ void Minesweeper::RenderTexts() {
 void Minesweeper::RenderBoard() {
     d2d_context->SetTarget(d2d_target_bitmap.get());
     d2d_context->BeginDraw();
-    d2d_context->Clear(background_color);
+    d2d_context->Clear(BACKGROUND_COLOR);
     d2d_context->SetTransform(D2D1::Matrix3x2F::Identity());
 
     if (entry_animation_state != AnimationState::Ended) {
@@ -405,7 +420,7 @@ void Minesweeper::RenderBoard() {
         auto time = entry_animation_timer.GetTime();
         RenderBoardWithEntryAnimation(time);
 
-        if (time >= 500) {
+        if (time >= ENTRY_ANIMATION_TIME) {
             entry_animation_state = AnimationState::Ended;
         }
     }
@@ -433,7 +448,9 @@ void Minesweeper::RenderBoard() {
 }
 
 void Minesweeper::RenderBoardWithEntryAnimation(double time) {
-    float ratio = time < 500.0f ? 1.0f - time / 500.0f : 0.0f;
+    FLOAT ratio = time < ENTRY_ANIMATION_TIME
+        ? static_cast<FLOAT>(1.0 - time / ENTRY_ANIMATION_TIME)
+        : 0.0f;
 
     perspective_transform_effect->SetInput(0, board_bitmap.get());
     perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_PERSPECTIVE_ORIGIN,
@@ -464,20 +481,21 @@ void Minesweeper::RenderBoardWithGrayscaleAnimation(double time) {
 void Minesweeper::RenderFields() {
     d2d_context->SetTarget(board_bitmap.get());
     d2d_context->BeginDraw();
-    d2d_context->Clear(background_color);
+    d2d_context->Clear(BACKGROUND_COLOR);
     d2d_context->SetTransform(transformation);
 
     auto time = discover_animation_timer.GetTime();
     if (discover_animation_state == AnimationState::Ongoing) {
-        if (time >= 1000) {
+        if (time >= REVEAL_ANIMATION_TIME) {
             discover_animation_state = AnimationState::Ended;
             DisableFieldGradient();
         }
         else {
-            even_gradient_brush->SetRadiusX(GetBoardXSize() * FIELD_SIZE * static_cast<FLOAT>(time) / 500.0f);
-            even_gradient_brush->SetRadiusY(GetBoardYSize() * FIELD_SIZE * static_cast<FLOAT>(time) / 500.0f);
-            odd_gradient_brush->SetRadiusX(GetBoardXSize() * FIELD_SIZE * static_cast<FLOAT>(time) / 500.0f);
-            odd_gradient_brush->SetRadiusY(GetBoardYSize() * FIELD_SIZE * static_cast<FLOAT>(time) / 500.0f);
+            FLOAT ratio = static_cast<FLOAT>(time / (REVEAL_ANIMATION_TIME / 2.0));
+            even_gradient_brush->SetRadiusX(GetBoardXSize() * FIELD_SIZE * ratio);
+            even_gradient_brush->SetRadiusY(GetBoardYSize() * FIELD_SIZE * ratio);
+            odd_gradient_brush->SetRadiusX(GetBoardXSize() * FIELD_SIZE * ratio);
+            odd_gradient_brush->SetRadiusY(GetBoardYSize() * FIELD_SIZE * ratio);
         }
     }
     else if (discover_animation_state == AnimationState::Scheduled) {
@@ -504,8 +522,8 @@ void Minesweeper::RebuildBoardBitmap() {
     board_bitmap = nullptr;
 
     D2D1_SIZE_U bitmap_size_in_pixels = D2D1::SizeU(
-        static_cast<UINT32>((FIELD_SIZE * GetBoardXSize()) / 96.0f * dpi),
-        static_cast<UINT32>((FIELD_SIZE * GetBoardYSize()) / 96.0f * dpi)
+        static_cast<UINT32>((FIELD_SIZE * GetBoardXSize()) / BASE_DPI * dpi),
+        static_cast<UINT32>((FIELD_SIZE * GetBoardYSize()) / BASE_DPI * dpi)
     );
 
     winrt::check_hresult(d2d_context->CreateBitmap(
@@ -559,8 +577,8 @@ void Minesweeper::OnMouseMove(HWND hwnd, const D2D1_POINT_2L& mouse_pos) {
     FLOAT x_begin = center.x - GetBoardXSize() / 2.0f * FIELD_SIZE;
     FLOAT y_begin = center.y - GetBoardYSize() / 2.0f * FIELD_SIZE;
 
-    FLOAT x_pos_diff = (mouse_pos.x * 96 / dpi) - x_begin;
-    FLOAT y_pos_diff = (mouse_pos.y * 96 / dpi) - y_begin;
+    FLOAT x_pos_diff = (mouse_pos.x * BASE_DPI / dpi) - x_begin;
+    FLOAT y_pos_diff = (mouse_pos.y * BASE_DPI / dpi) - y_begin;
 
     int column_no = x_pos_diff > 0 ? static_cast<int>(x_pos_diff / FIELD_SIZE) : -1;
     int row_no = y_pos_diff > 0 ? static_cast<int>(y_pos_diff / FIELD_SIZE) : -1;
@@ -596,6 +614,9 @@ void Minesweeper::OnLeftButtonClick(HWND hwnd) {
     even_gradient_brush->SetCenter(D2D1::Point2F(
         FIELD_SIZE * (hovered_x + 0.5f - GetBoardXSize() / 2.0f),
         FIELD_SIZE * (hovered_y + 0.5f - GetBoardYSize() / 2.0f)));
+    odd_gradient_brush->SetCenter(D2D1::Point2F(
+        FIELD_SIZE * (hovered_x + 0.5f - GetBoardXSize() / 2.0f),
+        FIELD_SIZE * (hovered_y + 0.5f - GetBoardYSize() / 2.0f)));
     discover_animation_state = AnimationState::Scheduled;
 
     if (game_state.GetGameStatus() == GameStatus::Lost) {
@@ -612,4 +633,8 @@ void Minesweeper::OnRightButtonClick(HWND hwnd) {
 
     fields[hovered_x][hovered_y].HandleRightClick(game_state);
     InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+bool Minesweeper::IsAnimationOngoing() {
+    return discover_animation_state != AnimationState::Ended || entry_animation_state != AnimationState::Ended || mine_animation_state != AnimationState::Ended;
 }

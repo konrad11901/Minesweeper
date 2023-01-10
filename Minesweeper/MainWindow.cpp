@@ -6,7 +6,7 @@ int MainWindow::x_size = 15;
 int MainWindow::y_size = 15;
 int MainWindow::mine_count = 40;
 
-MainWindow::MainWindow() : hwnd(nullptr) {}
+MainWindow::MainWindow() : hwnd(nullptr), minesweeper(x_size, y_size, mine_count) {}
 
 void MainWindow::InitializeWindow(HINSTANCE instance, INT cmd_show) {
     minesweeper.CreateDeviceIndependentResources();
@@ -57,7 +57,9 @@ void MainWindow::RunMessageLoop() {
             }
         }
         else {
-            minesweeper.OnRender(hwnd);
+            if (minesweeper.IsAnimationOngoing()) {
+                minesweeper.OnRender(hwnd);
+            }
         }
     } while (msg.message != WM_QUIT);
 }
