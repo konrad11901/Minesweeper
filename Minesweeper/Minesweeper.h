@@ -33,6 +33,7 @@ private:
     winrt::com_ptr<ID2D1Bitmap1> d2d_target_bitmap;
     winrt::com_ptr<ID2D1Bitmap1> board_bitmap;
     winrt::com_ptr<ID2D1Effect> perspective_transform_effect;
+    winrt::com_ptr<ID2D1Effect> color_matrix_effect;
     winrt::com_ptr<ID2D1SolidColorBrush> main_brush;
     winrt::com_ptr<ID2D1RadialGradientBrush> even_gradient_brush, odd_gradient_brush;
 
@@ -49,6 +50,8 @@ private:
     AnimationState entry_animation_state;
     Timer discover_animation_timer;
     AnimationState discover_animation_state;
+    Timer mine_animation_timer;
+    AnimationState mine_animation_state;
 
     D2D1::Matrix3x2F transformation;
     D2D1_POINT_2F center;
@@ -67,8 +70,12 @@ private:
     void RebuildBoardBitmap();
     void RenderTexts();
     void RenderBoard();
+    void RenderBoardWithEntryAnimation(double time);
+    void RenderBoardWithGrayscaleAnimation(double time);
     void RenderFields();
     void HandleDeviceLost(HWND hwnd);
+
+    D2D1_MATRIX_5X4_F GetMatrixForGrayscaleAnimation(double time);
 
     // Consts
     static constexpr int FIELD_SIZE = 40;
@@ -84,5 +91,14 @@ private:
         {.position = 0.0f, .color = {.r = 0.65f, .g = 0.78f, .b = 0.4f, .a = 1.0f } },
         {.position = 0.5f, .color = {.r = 0.65f, .g = 0.78f, .b = 0.4f, .a = 1.0f } },
         {.position = 1.0f, .color = {.r = 0.69f, .g = 0.88f, .b = 0.9f, .a = 1.0f } }
+    };
+
+    static constexpr D2D1_MATRIX_5X4_F grayscale_matrix = {
+        .m = {
+            0.299f, 0.299f, 0.299f, 0.0f,
+            0.587f, 0.587f, 0.587f, 0.0f,
+            0.114f, 0.114f, 0.114f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f,
+            0.0f,0.0f, 0.0f, 0.0f }
     };
 };

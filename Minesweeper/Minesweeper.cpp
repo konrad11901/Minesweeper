@@ -109,6 +109,7 @@ void Minesweeper::CreateDeviceDependentResources() {
     winrt::check_hresult(d2d_context->CreateSolidColorBrush(background_color, main_brush.put()));
 
     winrt::check_hresult(d2d_context->CreateEffect(CLSID_D2D13DPerspectiveTransform, perspective_transform_effect.put()));
+    winrt::check_hresult(d2d_context->CreateEffect(CLSID_D2D1ColorMatrix, color_matrix_effect.put()));
 
     winrt::com_ptr<ID2D1GradientStopCollection> even_rad_stops, odd_rad_stops;
     winrt::check_hresult(d2d_context->CreateGradientStopCollection(even_rad_stops_data, 3, even_rad_stops.put()));
@@ -212,6 +213,16 @@ void Minesweeper::HandleDeviceLost(HWND hwnd) {
     CreateWindowSizeDependentResources(hwnd);
 }
 
+D2D1_MATRIX_5X4_F Minesweeper::GetMatrixForGrayscaleAnimation(double time) {
+    float ratio = time < 2000.f ? time / 2000.0f : 1.0f;
+    return D2D1::Matrix5x4F(
+        1.0f - 0.701f * ratio, 0.299f * ratio, 0.299f * ratio, 0.0f,
+        0.587f * ratio, 1.0f - 0.413f * ratio, 0.587f * ratio, 0.0f,
+        0.114f * ratio, 0.114f * ratio, 1.0f - 0.886f * ratio, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+        0.0f, 0.0f, 0.0f, 0.0f);
+}
+
 void Minesweeper::InitializeGame(int x_size, int y_size, int mines_count) {
     if (x_size <= 0 || y_size <= 0 || mines_count < 0) {
         return;
@@ -239,6 +250,7 @@ void Minesweeper::InitializeGame(int x_size, int y_size, int mines_count) {
     game_state = GameState(mines_count, x_size * y_size);
     entry_animation_state = AnimationState::Scheduled;
     discover_animation_state = AnimationState::Ended;
+    mine_animation_state = AnimationState::Ended;
 
     RebuildBoardBitmap();
 }
@@ -384,12 +396,29 @@ void Minesweeper::RenderBoard() {
     d2d_context->Clear(background_color);
     d2d_context->SetTransform(D2D1::Matrix3x2F::Identity());
 
-    auto time = entry_animation_timer.GetTime();
-    if (entry_animation_state == AnimationState::Ongoing && time >= 500) {
-        entry_animation_state = AnimationState::Ended;
-    }
+    if (entry_animation_state != AnimationState::Ended) {
+        if (entry_animation_state == AnimationState::Scheduled) {
+            entry_animation_timer.StartCounter();
+            entry_animation_state = AnimationState::Ongoing;
+        }
 
-    if (entry_animation_state == AnimationState::Ended) {
+        auto time = entry_animation_timer.GetTime();
+        RenderBoardWithEntryAnimation(time);
+
+        if (time >= 500) {
+            entry_animation_state = AnimationState::Ended;
+        }
+    }
+    else if (mine_animation_state != AnimationState::Ended) {
+        if (mine_animation_state == AnimationState::Scheduled) {
+            mine_animation_timer.StartCounter();
+            mine_animation_state = AnimationState::Ongoing;
+        }
+
+        auto time = mine_animation_timer.GetTime();
+        RenderBoardWithGrayscaleAnimation(time);
+    }
+    else {
         d2d_context->DrawImage(
             board_bitmap.get(),
             D2D1::Point2F(
@@ -398,30 +427,38 @@ void Minesweeper::RenderBoard() {
             )
         );
     }
-    else {
-        if (entry_animation_state == AnimationState::Scheduled) {
-            time = 0;
-            entry_animation_timer.StartCounter();
-            entry_animation_state = AnimationState::Ongoing;
-        }
-
-        perspective_transform_effect->SetInput(0, board_bitmap.get());
-        perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_PERSPECTIVE_ORIGIN,
-            D2D1::Vector2F(0.0f, (1.0f - static_cast<FLOAT>(time) / 500.0f) * 600.0f));
-        perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_ROTATION,
-            D2D1::Vector3F(0.0f, (1.0f - static_cast<FLOAT>(time) / 500.0f) * 60.0f, 0.0f));
-        d2d_context->DrawImage(
-            perspective_transform_effect.get(),
-            D2D1::Point2F(
-                (d2d_context->GetSize().width - FIELD_SIZE * GetBoardXSize()) / 2.0f,
-                (d2d_context->GetSize().height - FIELD_SIZE * GetBoardYSize()) / 2.0f
-            )
-        );
-    }
-
     RenderTexts();
 
     winrt::check_hresult(d2d_context->EndDraw());
+}
+
+void Minesweeper::RenderBoardWithEntryAnimation(double time) {
+    float ratio = time < 500.0f ? 1.0f - time / 500.0f : 0.0f;
+
+    perspective_transform_effect->SetInput(0, board_bitmap.get());
+    perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_PERSPECTIVE_ORIGIN,
+        D2D1::Vector2F(0.0f, ratio * 600.0f));
+    perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_ROTATION,
+        D2D1::Vector3F(0.0f, ratio * 60.0f, 0.0f));
+    d2d_context->DrawImage(
+        perspective_transform_effect.get(),
+        D2D1::Point2F(
+            (d2d_context->GetSize().width - FIELD_SIZE * GetBoardXSize()) / 2.0f,
+            (d2d_context->GetSize().height - FIELD_SIZE * GetBoardYSize()) / 2.0f
+        )
+    );
+}
+
+void Minesweeper::RenderBoardWithGrayscaleAnimation(double time) {
+    color_matrix_effect->SetInput(0, board_bitmap.get());
+    color_matrix_effect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, GetMatrixForGrayscaleAnimation(time));
+    d2d_context->DrawImage(
+        color_matrix_effect.get(),
+        D2D1::Point2F(
+            (d2d_context->GetSize().width - FIELD_SIZE * GetBoardXSize()) / 2.0f,
+            (d2d_context->GetSize().height - FIELD_SIZE * GetBoardYSize()) / 2.0f
+        )
+    );
 }
 
 void Minesweeper::RenderFields() {
@@ -560,6 +597,10 @@ void Minesweeper::OnLeftButtonClick(HWND hwnd) {
         FIELD_SIZE * (hovered_x + 0.5f - GetBoardXSize() / 2.0f),
         FIELD_SIZE * (hovered_y + 0.5f - GetBoardYSize() / 2.0f)));
     discover_animation_state = AnimationState::Scheduled;
+
+    if (game_state.GetGameStatus() == GameStatus::Lost) {
+        mine_animation_state = AnimationState::Scheduled;
+    }
 
     InvalidateRect(hwnd, nullptr, FALSE);
 }
