@@ -437,9 +437,9 @@ void Minesweeper::RenderBoardWithEntryAnimation(double time) {
 
     perspective_transform_effect->SetInput(0, board_bitmap.get());
     perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_PERSPECTIVE_ORIGIN,
-        D2D1::Vector2F(0.0f, ratio * 600.0f));
+        D2D1::Vector2F(ratio * 600.0f, ratio * 600.0f));
     perspective_transform_effect->SetValue(D2D1_3DPERSPECTIVETRANSFORM_PROP_ROTATION,
-        D2D1::Vector3F(0.0f, ratio * 60.0f, 0.0f));
+        D2D1::Vector3F(ratio * -90.0f, ratio * -90.0f, 0.0f));
     d2d_context->DrawImage(
         perspective_transform_effect.get(),
         D2D1::Point2F(
